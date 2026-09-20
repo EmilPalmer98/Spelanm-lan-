@@ -473,6 +473,18 @@
     color:#8d988b;
     line-height:1.45;
   }
+
+  .add-member-box{
+    margin-top:18px;
+    padding-top:18px;
+    border-top:1px solid rgba(169,199,143,.14);
+  }
+  .add-member-box textarea{
+    min-height:105px;
+  }
+  .add-member-box .group-title{
+    margin-bottom:6px;
+  }
   .danger-button{
     margin-top:12px;
     background:linear-gradient(180deg,#8d766b,#735b51);
@@ -580,6 +592,27 @@
                   style="margin-top:12px">
             AVBOKA VALDA
           </button>
+
+          <div class="add-member-box">
+            <div class="group-title">Lägg till spelare</div>
+            <p class="cancel-sub">
+              Lägg till en eller flera nya personer i samma bokning.
+            </p>
+
+            <textarea id="newMembers"
+                      maxlength="1000"
+                      placeholder="Ett namn per rad"></textarea>
+
+            <div class="member-hint" id="addMemberHint">
+              Varje rad räknas som en person. Lediga platser räknas automatiskt.
+            </div>
+
+            <button id="addMembers"
+                    type="button"
+                    style="margin-top:11px">
+              LÄGG TILL PERSONER
+            </button>
+          </div>
         </div>
       </div>
 
@@ -624,6 +657,9 @@ const groupBoxEl = document.getElementById("groupBox");
 const memberListEl = document.getElementById("memberList");
 const cancelSelectedEl = document.getElementById("cancelSelected");
 const manageHintEl = document.getElementById("manageHint");
+const newMembersEl = document.getElementById("newMembers");
+const addMembersEl = document.getElementById("addMembers");
+const addMemberHintEl = document.getElementById("addMemberHint");
 
 const spotsEl = document.getElementById("spots");
 const messageEl = document.getElementById("message");
@@ -759,6 +795,9 @@ function renderMembers(members) {
     memberListEl.innerHTML =
       '<div class="member-hint">Alla i gruppen är redan avbokade.</div>';
     cancelSelectedEl.disabled = true;
+    addMembersEl.disabled = true;
+    addMemberHintEl.textContent =
+      "Bokningen är helt avbokad och kan inte längre ändras.";
     groupBoxEl.classList.add("show");
     return;
   }
@@ -791,6 +830,17 @@ function renderMembers(members) {
 
   cancelSelectedEl.disabled = false;
   groupBoxEl.classList.add("show");
+
+  const freeSlots = Math.max(
+    0,
+    Number(window.currentFreeSlots || 0)
+  );
+
+  addMemberHintEl.textContent =
+    freeSlots > 0
+      ? "Det finns " + freeSlots + " lediga platser. Ett namn per rad."
+      : "Det finns inga lediga platser kvar.";
+  addMembersEl.disabled = freeSlots <= 0;
 }
 
 function loadSavedCode() {
@@ -917,6 +967,7 @@ async function lookupGroup() {
     );
 
     if (result && result.ok) {
+      window.currentFreeSlots = Number(result.freeSlots) || 0;
       renderMembers(result.members || []);
       manageHintEl.textContent =
         "Markera en eller flera personer som ska tas bort från anmälan.";
@@ -1027,6 +1078,96 @@ async function cancelSelectedMembers() {
     cancelSelectedEl.textContent = "AVBOKA VALDA";
   }
 }
+
+
+async function addMembersToBooking() {
+  if (busy) return;
+
+  const names = newMembersEl.value
+    .split(/\r?\n|,/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const code = manageCodeEl.value.trim().toUpperCase();
+
+  if (!code) {
+    showMessage("Fyll i din avbokningskod först.");
+    manageCodeEl.focus();
+    return;
+  }
+
+  if (!names.length) {
+    showMessage("Skriv minst ett namn att lägga till.");
+    newMembersEl.focus();
+    return;
+  }
+
+  if (names.length > 20) {
+    showMessage("Du kan lägga till högst 20 personer åt gången.");
+    return;
+  }
+
+  const uniqueNames = [];
+  const seen = new Set();
+
+  names.forEach(name => {
+    const key = name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueNames.push(name);
+    }
+  });
+
+  busy = true;
+  addMembersEl.disabled = true;
+  addMembersEl.textContent = "LÄGGER TILL...";
+
+  try {
+    const params = new URLSearchParams({
+      action: "addMembers",
+      cancellationCode: code,
+      memberNames: JSON.stringify(uniqueNames)
+    });
+
+    const result = await jsonp(
+      API_URL + "?" + params.toString(),
+      20000
+    );
+
+    if (result && result.ok) {
+      newMembersEl.value = "";
+      window.currentFreeSlots = Number(result.freeSlots) || 0;
+      renderMembers(result.members || []);
+
+      showMessage(
+        result.added +
+        (result.added === 1
+          ? " person har lagts till i bokningen."
+          : " personer har lagts till i bokningen."),
+        true
+      );
+
+      refresh();
+    } else {
+      showMessage(
+        (result && result.error) ||
+        "Personerna kunde inte läggas till."
+      );
+    }
+  } catch (_) {
+    showMessage(
+      "Kunde inte få svar från anmälningsservern. Försök igen."
+    );
+  } finally {
+    busy = false;
+    addMembersEl.disabled =
+      !loadedMembers.length ||
+      Number(window.currentFreeSlots || 0) <= 0;
+    addMembersEl.textContent = "LÄGG TILL PERSONER";
+  }
+}
+
+addMembersEl.addEventListener("click", addMembersToBooking);
 
 submitEl.addEventListener("click", registerPlayer);
 

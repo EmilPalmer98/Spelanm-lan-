@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spel Anmälan</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#111;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{width:100%;max-width:560px;background:#1d1d1d;border:1px solid #333;border-radius:18px;padding:28px;box-shadow:0 15px 50px rgba(0,0,0,.4)}
+  h1{margin:0 0 8px;font-size:32px}
+  .sub{color:#aaa;margin:0 0 24px}
+  label{display:block;font-weight:700;margin:18px 0 8px}
+  input,textarea{width:100%;border:1px solid #444;background:#111;color:#fff;border-radius:10px;padding:13px;font-size:16px;outline:none}
+  input:focus,textarea:focus{border-color:#888}
+  textarea{min-height:130px;resize:vertical}
+  .hint{font-size:13px;color:#999;margin-top:7px}
+  .counter{margin:20px 0;padding:15px;border-radius:12px;background:#292929;display:flex;justify-content:space-between;align-items:center}
+  .count{font-size:22px;font-weight:800}
+  button{width:100%;border:0;border-radius:11px;padding:15px;font-size:17px;font-weight:800;cursor:pointer;background:#fff;color:#111}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:16px;padding:13px;border-radius:10px;display:none}
+  .ok{display:block;background:#163b20;color:#b9f7c7}
+  .err{display:block;background:#4a1b1b;color:#ffd0d0}
+  .small{font-size:12px;color:#777;text-align:center;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🎮 Spel Anmälan</h1>
+  <p class="sub">Anmäl dig själv och de personer du kommer tillsammans med.</p>
+
+  <label for="name">Ditt namn *</label>
+  <input id="name" maxlength="100" placeholder="Förnamn Efternamn" autocomplete="name">
+
+  <label for="companions">Övriga du anmäler</label>
+  <textarea id="companions" maxlength="1000" placeholder="Ett namn per rad"></textarea>
+  <div class="hint">Lämna tomt om du kommer själv.</div>
+
+  <div class="counter">
+    <div>Lediga platser</div>
+    <div class="count" id="spots">Laddar...</div>
+  </div>
+
+  <button id="submit">Skicka anmälan</button>
+  <div id="message" class="msg"></div>
+  <div class="small">Genom att skicka anmälan godkänner du att uppgifterna används för administration av spelet.</div>
+</div>
+
+<script>
+const API_URL = "https://script.google.com/macros/library/d/1buHn3Te9W4h9eNjNn0arWS9_rzpvw9wXMNl7_cwmf1mAw_2WMG3muZMi/1";
+
+const nameEl = document.getElementById("name");
+const companionsEl = document.getElementById("companions");
+const submitEl = document.getElementById("submit");
+const spotsEl = document.getElementById("spots");
+const messageEl = document.getElementById("message");
+
+function showMessage(text, ok=false){
+  messageEl.textContent = text;
+  messageEl.className = "msg " + (ok ? "ok" : "err");
+}
+function companionCount(){
+  return companionsEl.value.split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean).length;
+}
+function refresh(){
+  if(API_URL.includes("KListra_")){
+    spotsEl.textContent = "—";
+    return;
+  }
+  fetch(API_URL + "?action=status")
+    .then(r=>r.json())
+    .then(d=>{
+      spotsEl.textContent = d.remaining + " / " + d.capacity;
+      submitEl.disabled = d.remaining <= 0;
+      if(d.remaining <= 0) submitEl.textContent = "Spelet är fullbokat";
+    })
+    .catch(()=>spotsEl.textContent="—");
+}
+submitEl.addEventListener("click", ()=>{
+  const name = nameEl.value.trim();
+  if(!name){ showMessage("Fyll i ditt namn."); return; }
+  if(API_URL.includes("KListra_")){
+    showMessage("Formuläret är inte anslutet ännu. Följ installationsguiden.");
+    return;
+  }
+  submitEl.disabled = true;
+  submitEl.textContent = "Skickar...";
+  const payload = {
+    action:"register",
+    name:name,
+    companions:companionsEl.value
+  };
+  fetch(API_URL, {
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify(payload)
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    if(d.ok){
+      showMessage("Anmälan är registrerad! " + d.total + " personer är nu anmälda.", true);
+      nameEl.value="";
+      companionsEl.value="";
+      refresh();
+    }else{
+      showMessage(d.error || "Något gick fel.");
+      refresh();
+    }
+  })
+  .catch(()=>showMessage("Kunde inte skicka anmälan. Försök igen."))
+  .finally(()=>{
+    submitEl.disabled=false;
+    submitEl.textContent="Skicka anmälan";
+  });
+});
+refresh();
+</script>
+</body>
+</html>
